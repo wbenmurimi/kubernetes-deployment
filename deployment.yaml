@@ -1,0 +1,97 @@
+#Service defination :Nodeport opens a port on the cluster while Loadbalancer provides a unique public URI/IP
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    run: myapp-service
+  name: myapp-service
+  namespace: prod
+spec:
+  type: NodePort
+  ports:
+  - port: 5000
+    name: http
+    targetPort: 5000
+    protocol: TCP
+  selector:
+    app: myapp-service
+  type: NodePort
+
+#Volumeclaim defination: Useful when you want to persist some data on the cluster so you do not loose it after restart
+
+kind: PersistentVolumeClaim
+metadata:
+  name: myapp-claim
+  namespace: prod
+  labels:
+    app: myapp-service
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 20Gi
+
+#Deployment defination: Contains details of the repricas we want, the image version volume mounts and registry secrets
+---
+apiVersion: v1
+kind: Deployment
+apiVersion: apps/v1
+metadata:
+  labels:
+    app: myapp-deployment
+    version: prod
+  name: myapp-deployment
+  namespace: prod
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: myapp-service
+      version: prod
+  template:
+    metadata:
+      labels:
+        app: myapp-service
+        version: prod
+    spec:
+      containers:
+      - image: myapp:001
+        name: myapp-service
+        ports:
+        - containerPort: 5000
+        resources:
+          limits:
+            memory: "3000Mi"
+          requests:
+            memory: "2000Mi"
+        volumeMounts:
+        - name: myapp-storage
+          mountPath: /usr/app
+      volumes:
+      - name: myapp-storage
+        persistentVolumeClaim:
+          claimName: myapp-claim
+      imagePullSecrets:
+      - name: your-registry-secrets
+
+
+#Ingress defination. Very useful to save cost since you can re-use one loadbalancer for the whole cluster  
+---
+apiVersion: extensions/v1beta1
+kind: Ingress
+metadata:
+  name: myapp-ingress
+  namespace: prod
+spec:
+  tls:
+    - hosts:
+      - domainname.com
+  rules:
+  - host: domainname.com
+    http:
+      paths:
+      - path: "/"
+        backend:
+          serviceName: myapp-service
+          servicePort: 5000
